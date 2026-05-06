@@ -1,5 +1,6 @@
 import logging
 from collections import Counter
+import re
 import threading
 from pathlib import Path
 
@@ -18,6 +19,102 @@ class WorkerProcessingError(RuntimeError):
 
 
 class CVProcessor:
+    SECTION_ALIASES = {
+        "summary": ["summary", "profile", "objective", "about"],
+        "experience": ["experience", "work experience", "employment", "professional experience"],
+        "education": ["education", "studies", "academic"],
+        "skills": ["skills", "technical skills", "core skills", "competencies"],
+        "projects": ["projects", "portfolio", "personal projects"],
+        "certifications": ["certifications", "certificates", "licenses"],
+        "languages": ["languages", "language skills"],
+    }
+
+    ROLE_TERMS = [
+        "developer",
+        "engineer",
+        "designer",
+        "analyst",
+        "scientist",
+        "manager",
+        "specialist",
+        "consultant",
+        "administrator",
+        "architect",
+        "intern",
+    ]
+
+    SKILL_TERMS = [
+        "python",
+        "django",
+        "flask",
+        "fastapi",
+        "react",
+        "javascript",
+        "typescript",
+        "node.js",
+        "next.js",
+        "html",
+        "css",
+        "tailwind",
+        "postgresql",
+        "mysql",
+        "mongodb",
+        "sql",
+        "docker",
+        "kubernetes",
+        "rabbitmq",
+        "redis",
+        "aws",
+        "azure",
+        "gcp",
+        "git",
+        "github",
+        "machine learning",
+        "deep learning",
+        "nlp",
+        "pandas",
+        "numpy",
+        "scikit-learn",
+        "tensorflow",
+        "pytorch",
+        "figma",
+        "ux",
+        "ui",
+        "wireframes",
+        "prototypes",
+        "analytics",
+        "excel",
+        "power bi",
+        "tableau",
+        "testing",
+        "api",
+        "rest",
+        "ci/cd",
+    ]
+
+    ACTION_VERBS = [
+        "built",
+        "created",
+        "led",
+        "improved",
+        "reduced",
+        "increased",
+        "managed",
+        "designed",
+        "implemented",
+        "deployed",
+        "optimized",
+        "analyzed",
+        "automated",
+        "delivered",
+        "trained",
+        "mentored",
+        "coordinated",
+        "launched",
+        "maintained",
+        "integrated",
+    ]
+
     def __init__(self):
         self.career_model = CareerModel()
 
@@ -146,6 +243,8 @@ class CVProcessor:
             "cv_quality_suggestions": quality["cv_quality_suggestions"],
             "cv_quality_breakdown": quality["cv_quality_breakdown"],
             "analysis_summary": insights["analysis_summary"],
+            "personalization_profile": insights["personalization_profile"],
+            "personalized_recommendations": insights["personalized_recommendations"],
             "strengths": insights["strengths"],
             "missing_keywords": insights["missing_keywords"],
             "career_path": insights["career_path"],
@@ -325,32 +424,183 @@ class CVProcessor:
     def build_extended_insights(self, text, ml, quality, keywords, matches):
         top_keywords = [item["term"] for item in keywords[:10]]
         best_match = matches[0] if matches else None
+        profile = self.build_personalization_profile(text, ml, quality, keywords, matches)
         missing_keywords = self.find_missing_keywords(text, best_match, top_keywords)
-        strengths = self.detect_strengths(quality, keywords, matches)
-        career_path = self.build_career_path(ml, quality, matches, missing_keywords)
-        improvement_plan = self.build_improvement_plan(quality, missing_keywords, best_match)
-        rewrite_examples = self.build_rewrite_examples(ml, missing_keywords, best_match)
+        strengths = self.detect_strengths(quality, keywords, matches, profile)
+        personalized_recommendations = self.build_personalized_recommendations(
+            ml,
+            quality,
+            matches,
+            missing_keywords,
+            profile,
+        )
+        career_path = self.build_career_path(ml, quality, matches, missing_keywords, profile)
+        improvement_plan = self.build_improvement_plan(quality, missing_keywords, best_match, profile)
+        rewrite_examples = self.build_rewrite_examples(ml, missing_keywords, best_match, profile)
 
         best_match_text = (
             f" The closest specific job profile is {best_match['title']} at {best_match['similarity']}% similarity."
             if best_match
             else ""
         )
+        skill_text = ", ".join(profile["detected_skills"][:5]) or "not enough explicit tools"
+        evidence_text = (
+            f"{profile['metric_count']} measurable result signals"
+            if profile["metric_count"]
+            else "no strong measurable result signals"
+        )
         analysis_summary = (
             f"The analysis separates career direction from CV-writing quality. Career fit is {ml['score']}/100 for "
             f"{ml['predicted_category']}, while CV writing quality is {quality['cv_quality_score']}/100. "
-            f"The strongest visible signals are {', '.join(top_keywords[:5]) or 'not yet clear'}.{best_match_text} "
-            "The best next move is to strengthen the weakest writing-quality areas and add missing role vocabulary naturally."
+            f"The strongest visible signals are {', '.join(top_keywords[:5]) or 'not yet clear'}, with explicit tools such as {skill_text} "
+            f"and {evidence_text}.{best_match_text} The best next move is to strengthen the weakest writing-quality areas "
+            "and add missing role vocabulary naturally."
         )
 
         return {
             "analysis_summary": analysis_summary,
+            "personalization_profile": profile,
+            "personalized_recommendations": personalized_recommendations,
             "strengths": strengths,
             "missing_keywords": missing_keywords,
             "career_path": career_path,
             "improvement_plan": improvement_plan,
             "rewrite_examples": rewrite_examples,
         }
+
+    def build_personalization_profile(self, text, ml, quality, keywords, matches):
+        lower_text = text.lower()
+        detected_sections = self.detect_sections(lower_text)
+        missing_sections = [name for name in self.SECTION_ALIASES if name not in detected_sections]
+        detected_skills = self.detect_terms(text, self.SKILL_TERMS)
+        detected_roles = self.detect_roles(text)
+        action_verbs = self.detect_terms(text, self.ACTION_VERBS)
+        metrics = self.extract_metrics(text)
+        links = self.extract_links(text)
+        top_keywords = [item["term"] for item in keywords[:8]]
+        best_match = matches[0] if matches else None
+        weak_quality_areas = sorted(quality["cv_quality_breakdown"], key=lambda item: item["score"])[:3]
+
+        target_role = best_match["title"] if best_match else f"{ml['predicted_category']} role"
+        target_terms = self.target_role_terms(best_match)
+        missing_target_terms = [
+            term
+            for term in target_terms
+            if term not in detected_skills and not self.contains_term(text, term)
+        ][:10]
+
+        return {
+            "target_role": target_role,
+            "predicted_category": ml["predicted_category"],
+            "detected_roles": detected_roles[:8],
+            "detected_skills": detected_skills[:14],
+            "top_keywords": top_keywords,
+            "detected_sections": detected_sections,
+            "missing_sections": missing_sections[:5],
+            "metric_count": len(metrics),
+            "metrics": metrics[:8],
+            "action_verbs": action_verbs[:10],
+            "links": links[:5],
+            "weak_quality_areas": weak_quality_areas,
+            "missing_target_terms": missing_target_terms,
+            "best_match_similarity": best_match["similarity"] if best_match else None,
+        }
+
+    def build_personalized_recommendations(self, ml, quality, matches, missing_keywords, profile):
+        recommendations = []
+        target_role = profile["target_role"]
+        detected_skills = profile["detected_skills"]
+        missing_terms = profile["missing_target_terms"] or [item["term"] for item in missing_keywords[:6]]
+        weak_areas = profile["weak_quality_areas"]
+        metric_count = profile["metric_count"]
+
+        if detected_skills:
+            recommendations.append(
+                {
+                    "priority": "High",
+                    "title": f"Turn {', '.join(detected_skills[:3])} into proof for {target_role}",
+                    "why": "The CV already names these skills, but the model rewards skills that are tied to responsibility and outcome.",
+                    "how": f"Add one bullet for each important skill: what you built, where you used it, and what changed because of it.",
+                    "example": f"Built a {target_role.lower()} project using {detected_skills[0]} to solve a specific problem, then report users, speed, accuracy, or delivery impact.",
+                }
+            )
+
+        if missing_terms:
+            recommendations.append(
+                {
+                    "priority": "High",
+                    "title": f"Add missing language for {target_role}",
+                    "why": f"The closest job profile expects signals such as {', '.join(missing_terms[:5])}, but they are not prominent in the CV.",
+                    "how": "Only add terms you can honestly support. Connect every new keyword to a real project, course, responsibility, or tool choice.",
+                    "example": f"Relevant project: used {', '.join(missing_terms[:3])} to deliver a concrete feature, analysis, workflow, or design decision.",
+                }
+            )
+
+        if metric_count < 3:
+            recommendations.append(
+                {
+                    "priority": "High",
+                    "title": "Add more measurable outcomes",
+                    "why": f"The CV currently shows {metric_count} measurable result signals. Recruiters can trust achievements faster when they include scale.",
+                    "how": "Add percentages, user counts, response time, saved hours, project duration, team size, budget, or number of delivered features.",
+                    "example": "Improved an internal workflow by reducing manual steps from X to Y, saving Z hours per week.",
+                }
+            )
+        else:
+            recommendations.append(
+                {
+                    "priority": "Medium",
+                    "title": "Move the strongest metric into the top third",
+                    "why": f"The CV already has measurable signals such as {', '.join(profile['metrics'][:3])}. They should be visible before the recruiter scans the details.",
+                    "how": "Put the strongest metric in the summary or the first experience entry.",
+                    "example": "Summary: role-focused candidate with experience delivering projects that improved X by Y%.",
+                }
+            )
+
+        for area in weak_areas:
+            recommendations.append(
+                {
+                    "priority": "High" if area["score"] < 55 else "Medium",
+                    "title": f"Personalized fix for {area['name'].lower()}",
+                    "why": f"This is one of the lower scoring writing areas: {area['evidence']}.",
+                    "how": self.improvement_detail(area),
+                    "example": self.personalized_area_example(area, target_role, detected_skills, missing_terms),
+                }
+            )
+
+        if "projects" in profile["missing_sections"] and ml["predicted_category"] in {"Software Engineering", "Data Science", "Design"}:
+            recommendations.append(
+                {
+                    "priority": "Medium",
+                    "title": "Add a Projects section",
+                    "why": f"For {target_role}, projects help prove ability when professional experience is short or broad.",
+                    "how": "Add 2-3 compact projects with stack, goal, responsibility, result, and a link if available.",
+                    "example": "Project name | stack | problem solved | measurable or visible outcome | repository/demo link.",
+                }
+            )
+
+        if not profile["links"] and ml["predicted_category"] in {"Software Engineering", "Data Science", "Design"}:
+            recommendations.append(
+                {
+                    "priority": "Medium",
+                    "title": "Add proof links",
+                    "why": "The model did not see portfolio, GitHub, LinkedIn, or project links. Proof links make claims easier to verify.",
+                    "how": "Add one clean line near the header with GitHub, portfolio, LinkedIn, or a project demo.",
+                    "example": "Links: GitHub | Portfolio | LinkedIn | live project demo.",
+                }
+            )
+
+        recommendations.append(
+            {
+                "priority": "Medium",
+                "title": f"Rewrite the summary for {target_role}",
+                "why": "A role-specific summary helps both recruiters and the classifier understand the intended direction faster.",
+                "how": "Use 2-3 lines: target role, strongest tools/domain, best proof, and the kind of work you want next.",
+                "example": self.summary_example(target_role, detected_skills, profile["metrics"]),
+            }
+        )
+
+        return recommendations[:10]
 
     def find_missing_keywords(self, text, best_match, existing_keywords):
         if not best_match:
@@ -380,7 +630,104 @@ class CVProcessor:
                 break
         return missing
 
-    def detect_strengths(self, quality, keywords, matches):
+    def detect_sections(self, lower_text):
+        detected = []
+        for section, aliases in self.SECTION_ALIASES.items():
+            for alias in aliases:
+                pattern = rf"(^|\n)\s*{re.escape(alias)}\s*(:|\n|$)"
+                if re.search(pattern, lower_text, flags=re.IGNORECASE):
+                    detected.append(section)
+                    break
+        return detected
+
+    def detect_terms(self, text, terms):
+        detected = []
+        for term in terms:
+            if self.contains_term(text, term):
+                detected.append(term)
+        return detected
+
+    def contains_term(self, text, term):
+        if not text or not term:
+            return False
+        escaped = re.escape(term.lower()).replace(r"\ ", r"[\s/_-]+")
+        pattern = rf"(?<![a-z0-9+#.-]){escaped}(?![a-z0-9+#.-])"
+        return bool(re.search(pattern, text.lower()))
+
+    def detect_roles(self, text):
+        roles = []
+        for line in text.splitlines():
+            clean_line = normalize_extracted_text(line)
+            if not clean_line or len(clean_line) > 90:
+                continue
+            lower_line = clean_line.lower()
+            if any(role_term in lower_line for role_term in self.ROLE_TERMS):
+                roles.append(clean_line)
+        if roles:
+            return list(dict.fromkeys(roles))
+
+        detected_terms = [term for term in self.ROLE_TERMS if self.contains_term(text, term)]
+        return detected_terms
+
+    def extract_metrics(self, text):
+        patterns = [
+            r"\b\d+(?:[.,]\d+)?\s?%",
+            r"\b\d+(?:[.,]\d+)?\s?(?:users|clients|customers|projects|features|tickets|reports|dashboards|models|pages|hours|days|weeks|months|years)\b",
+            r"\b(?:reduced|increased|improved|saved|grew|optimized|delivered)\b[^.\n]{0,70}\b\d+(?:[.,]\d+)?\b",
+            r"\$\s?\d+(?:[.,]\d+)?[kKmM]?",
+            r"\b\d+(?:[.,]\d+)?x\b",
+        ]
+        metrics = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                metric = normalize_extracted_text(match.group())
+                if metric and metric not in metrics:
+                    metrics.append(metric)
+                if len(metrics) >= 12:
+                    return metrics
+        return metrics
+
+    def extract_links(self, text):
+        links = []
+        patterns = [
+            r"https?://[^\s)>,]+",
+            r"\b(?:github|linkedin|portfolio|behance|dribbble)\.com/[^\s)>,]+",
+            r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b",
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                value = match.group().strip(".,;")
+                if value not in links:
+                    links.append(value)
+        return links
+
+    def target_role_terms(self, best_match):
+        if not best_match:
+            return []
+        job_terms = self.career_model.preprocessor.preprocess_tokens(best_match["description"])
+        ranked_terms = [term for term, _count in Counter(job_terms).most_common()]
+        return [term for term in ranked_terms if len(term) >= 4][:14]
+
+    def personalized_area_example(self, area, target_role, detected_skills, missing_terms):
+        main_skill = detected_skills[0] if detected_skills else (missing_terms[0] if missing_terms else "a relevant tool")
+        if area["name"] == "Completeness":
+            return f"Expanded a {target_role.lower()} responsibility by explaining the context, the {main_skill} work performed, and the final business or technical result."
+        if area["name"] == "Structure":
+            return "Use: Summary | Skills | Experience | Projects | Education, then keep each bullet to one action and one result."
+        if area["name"] == "Measurable impact":
+            return f"Improved a {target_role.lower()} workflow using {main_skill}, reducing time/cost/errors by X% or supporting Y users."
+        if area["name"] == "Action language":
+            return f"Built, optimized, automated, or delivered a {main_skill} solution for a clear {target_role.lower()} problem."
+        if area["name"] == "Role clarity":
+            return f"Headline: {target_role} focused on {main_skill}, delivery, and measurable outcomes."
+        return f"Rewrite one generic sentence into a {target_role.lower()} achievement with tool, action, and result."
+
+    def summary_example(self, target_role, detected_skills, metrics):
+        skills = ", ".join(detected_skills[:4]) if detected_skills else "role-relevant tools"
+        metric = metrics[0] if metrics else "measurable project outcomes"
+        return f"{target_role} candidate with hands-on experience in {skills}. Strongest proof: {metric}. Looking to apply these skills in production work with clear ownership and impact."
+
+    def detect_strengths(self, quality, keywords, matches, profile=None):
         strengths = []
         top_quality_areas = sorted(quality["cv_quality_breakdown"], key=lambda item: item["score"], reverse=True)[:2]
         for area in top_quality_areas:
@@ -399,6 +746,22 @@ class CVProcessor:
                 }
             )
 
+        if profile and profile["detected_skills"]:
+            strengths.append(
+                {
+                    "title": "Concrete skill evidence",
+                    "detail": f"The CV explicitly mentions {', '.join(profile['detected_skills'][:6])}. Tie these to outcomes for stronger recruiter value.",
+                }
+            )
+
+        if profile and profile["metric_count"]:
+            strengths.append(
+                {
+                    "title": "Some measurable proof",
+                    "detail": f"Detected measurable signals such as {', '.join(profile['metrics'][:3])}.",
+                }
+            )
+
         if matches:
             strengths.append(
                 {
@@ -406,19 +769,20 @@ class CVProcessor:
                     "detail": f"{matches[0]['title']} is the closest role profile at {matches[0]['similarity']}% similarity.",
                 }
             )
-        return strengths[:5]
+        return strengths[:7]
 
-    def build_career_path(self, ml, quality, matches, missing_keywords):
+    def build_career_path(self, ml, quality, matches, missing_keywords, profile=None):
         target_role = matches[0]["title"] if matches else f"{ml['predicted_category']} role"
         second_role = matches[1]["title"] if len(matches) > 1 else "adjacent role"
         missing_terms = ", ".join(item["term"] for item in missing_keywords[:4]) or "the most important target-role tools"
         quality_focus = min(quality["cv_quality_breakdown"], key=lambda item: item["score"])
+        detected_skills = ", ".join((profile or {}).get("detected_skills", [])[:4]) or "the strongest current skills"
 
         return [
             {
                 "stage": "Now",
                 "title": f"Position the CV toward {target_role}",
-                "detail": f"Make the profile headline and first experience bullets clearly support {ml['predicted_category']}.",
+                "detail": f"Make the profile headline and first experience bullets clearly support {ml['predicted_category']} using {detected_skills}.",
             },
             {
                 "stage": "Next 2 weeks",
@@ -442,8 +806,9 @@ class CVProcessor:
             },
         ]
 
-    def build_improvement_plan(self, quality, missing_keywords, best_match):
+    def build_improvement_plan(self, quality, missing_keywords, best_match, profile=None):
         plan = []
+        profile = profile or {}
         low_areas = sorted(quality["cv_quality_breakdown"], key=lambda item: item["score"])[:3]
         for area in low_areas:
             plan.append(
@@ -465,6 +830,15 @@ class CVProcessor:
                 }
             )
 
+        if profile.get("missing_sections"):
+            plan.append(
+                {
+                    "priority": "Medium",
+                    "title": "Add missing CV sections",
+                    "detail": f"The parser did not clearly detect: {', '.join(profile['missing_sections'][:4])}. Add only the sections that are relevant and keep them compact.",
+                }
+            )
+
         plan.append(
             {
                 "priority": "Medium",
@@ -472,7 +846,7 @@ class CVProcessor:
                 "detail": "Put the strongest quantified achievements in the summary or first two experience bullets so they are visible immediately.",
             }
         )
-        return plan[:5]
+        return plan[:7]
 
     def improvement_detail(self, area):
         if area["name"] == "Completeness":
@@ -487,18 +861,21 @@ class CVProcessor:
             return "Add a headline or summary that names the target role and mirrors the most relevant skills."
         return "Add clearer evidence and reduce generic wording."
 
-    def build_rewrite_examples(self, ml, missing_keywords, best_match):
+    def build_rewrite_examples(self, ml, missing_keywords, best_match, profile=None):
         role = best_match["title"] if best_match else f"{ml['predicted_category']} role"
         terms = [item["term"] for item in missing_keywords[:3]]
         term_text = ", ".join(terms) if terms else "the relevant tools"
+        profile = profile or {}
+        detected_skill = (profile.get("detected_skills") or ["a relevant tool"])[0]
+        metric_hint = (profile.get("metrics") or ["a measurable result"])[0]
         return [
             {
                 "before": "Responsible for different tasks and helping the team.",
-                "after": f"Delivered {role.lower()} responsibilities by owning a defined project, using {term_text}, and reporting the measurable outcome.",
+                "after": f"Delivered {role.lower()} responsibilities by owning a defined project, using {term_text}, and reporting {metric_hint}.",
             },
             {
                 "before": "Worked on applications and fixed issues.",
-                "after": "Improved application reliability by identifying recurring issues, implementing fixes, and documenting the result with before/after metrics.",
+                "after": f"Improved reliability by identifying recurring issues, implementing fixes with {detected_skill}, and documenting before/after metrics.",
             },
             {
                 "before": "Good communication and teamwork skills.",

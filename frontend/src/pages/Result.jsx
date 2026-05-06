@@ -133,6 +133,8 @@ export default function Result() {
   const wordCount = Number(textStats.word_count) || countVisibleWords(result?.extracted_text || "");
   const keywordCount = result?.keywords?.length || 0;
   const bestMatch = result?.job_matches?.[0];
+  const profile = result?.personalization_profile || {};
+  const recommendations = result?.personalized_recommendations || [];
   const qualityBreakdownData = useMemo(
     () =>
       (result?.cv_quality_breakdown || []).map((item) => ({
@@ -145,8 +147,8 @@ export default function Result() {
   return (
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-lg border border-sky-100 bg-gradient-to-r from-sky-200 via-pink-100 to-white p-6 shadow-soft">
-        <div className="absolute right-6 top-6 hidden rounded-full bg-white/50 px-5 py-2 text-sm font-semibold text-sky-900 ring-1 ring-white/70 md:block">
-          Demo analysis trace
+        <div className="absolute right-6 top-6 hidden rounded-full bg-white/60 px-5 py-2 text-sm font-semibold text-sky-900 ring-1 ring-white/70 md:block">
+          Product analysis + demo trace
         </div>
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
@@ -156,8 +158,8 @@ export default function Result() {
             </div>
             <p className="text-sm font-medium text-slate-600">{status?.filename || `CV #${cvId}`}</p>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">
-              This page is intentionally verbose for the demo. It shows the score meaning, the processing stages,
-              the strongest keyword signals, and how the CV compares with the sample job corpus.
+              The main panels focus on personalized career advice. Amber panels are demo-only explainability views that
+              expose internal model signals for this project presentation.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -270,10 +272,59 @@ export default function Result() {
             </Panel>
           </div>
 
-          <Panel tone="pink">
+          <div className="space-y-6">
+            <Panel tone="blue">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={20} className="text-sky-700" />
+                  <h2 className="text-base font-semibold text-slate-950">Personalized next actions</h2>
+                </div>
+                <ProductBadge />
+              </div>
+              <div className="space-y-3">
+                {(recommendations.length ? recommendations : fallbackRecommendations(result)).map((item, index) => (
+                  <div key={`${item.title}-${index}`} className="rounded-lg bg-white/80 p-4 ring-1 ring-sky-100">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${priorityClass(item.priority)}`}>
+                        {item.priority || "Medium"}
+                      </span>
+                      <div className="text-sm font-semibold text-slate-950">{item.title}</div>
+                    </div>
+                    <p className="text-sm leading-6 text-slate-700">{item.why}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">{item.how}</p>
+                    {item.example && (
+                      <div className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-sm leading-6 text-slate-700 ring-1 ring-sky-100">
+                        {item.example}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Panel>
+
+            <Panel tone="pink">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={20} className="text-pink-700" />
+                  <h2 className="text-base font-semibold text-slate-950">Personalization chart</h2>
+                </div>
+                <ProductBadge />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <SnapshotGroup label="Target role" values={[profile.target_role || bestMatch?.title || result.predicted_category]} />
+                <SnapshotGroup label="Detected skills" values={profile.detected_skills || []} empty="No explicit skills detected yet" />
+                <SnapshotGroup label="Visible proof" values={profile.metrics || []} empty="No measurable proof detected yet" />
+                <SnapshotGroup label="Missing target signals" values={profile.missing_target_terms || []} empty="No major target gaps detected" />
+                <SnapshotGroup label="Sections to consider" values={profile.missing_sections || []} empty="Core sections look present" />
+              </div>
+            </Panel>
+          </div>
+
+          <Panel tone="demo">
             <div className="mb-4 flex items-center gap-2">
-              <BrainCircuit size={20} className="text-pink-700" />
+              <BrainCircuit size={20} className="text-amber-700" />
               <h2 className="text-base font-semibold text-slate-950">How the models read this CV</h2>
+              <DemoBadge />
             </div>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
               <Metric label="Predicted category" value={result.predicted_category} />
@@ -410,27 +461,30 @@ export default function Result() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
-            <Panel>
+            <Panel tone="demo">
               <div className="mb-4 flex items-center gap-2">
-                <BarChart3 size={20} className="text-sky-700" />
+                <BarChart3 size={20} className="text-amber-700" />
                 <h2 className="text-base font-semibold text-slate-950">Keyword weight chart</h2>
+                <DemoBadge />
               </div>
               <KeywordWeightChart data={keywordChartData} />
             </Panel>
 
-            <Panel>
+            <Panel tone="demo">
               <div className="mb-4 flex items-center gap-2">
-                <BriefcaseBusiness size={20} className="text-pink-700" />
+                <BriefcaseBusiness size={20} className="text-amber-700" />
                 <h2 className="text-base font-semibold text-slate-950">Job similarity chart</h2>
+                <DemoBadge />
               </div>
               <JobSimilarityChart data={matchChartData} />
             </Panel>
           </div>
 
-          <Panel tone="blue">
+          <Panel tone="demo">
             <div className="mb-4 flex items-center gap-2">
-              <Sparkles size={20} className="text-sky-700" />
+              <Sparkles size={20} className="text-amber-700" />
               <h2 className="text-base font-semibold text-slate-950">Extracted keywords</h2>
+              <DemoBadge />
             </div>
             <div className="flex flex-wrap gap-2">
               {result.keywords?.map((keyword, index) => (
@@ -452,6 +506,7 @@ export default function Result() {
             <div className="mb-4 flex items-center gap-2">
               <BriefcaseBusiness size={20} className="text-pink-700" />
               <h2 className="text-base font-semibold text-slate-950">Job matches</h2>
+              <ProductBadge />
             </div>
             {bestMatch && (
               <div className="mb-4 rounded-lg bg-gradient-to-r from-sky-100 to-pink-100 p-4 ring-1 ring-white">
@@ -494,12 +549,13 @@ export default function Result() {
             </div>
           </Panel>
 
-          <Panel>
+          <Panel tone="demo">
             <div className="mb-4 flex items-center gap-2">
-              <FileText size={20} className="text-sky-700" />
+              <FileText size={20} className="text-amber-700" />
               <h2 className="text-base font-semibold text-slate-950">CV text with highlighted keywords</h2>
+              <DemoBadge />
             </div>
-            <div className="max-h-[560px] overflow-auto rounded-lg border border-sky-100 bg-white/70 p-4">
+            <div className="max-h-[560px] overflow-auto rounded-lg border border-amber-100 bg-white/70 p-4">
               <KeywordHighlighter text={result.extracted_text} keywords={result.keywords} />
             </div>
           </Panel>
@@ -514,6 +570,7 @@ function Panel({ children, tone = "plain" }) {
     plain: "border-sky-100 bg-white/70",
     blue: "border-sky-100 bg-gradient-to-br from-sky-100 via-white to-sky-50",
     pink: "border-pink-100 bg-gradient-to-br from-pink-100 via-white to-sky-50",
+    demo: "border-amber-200 bg-gradient-to-br from-amber-100 via-white to-orange-50",
   };
 
   return <section className={`render-surface rounded-lg border p-5 shadow-soft ${tones[tone]}`}>{children}</section>;
@@ -526,6 +583,34 @@ function Metric({ label, value }) {
       <div className="mt-1 truncate text-lg font-semibold text-slate-950" title={String(value ?? "")}>
         {value}
       </div>
+    </div>
+  );
+}
+
+function ProductBadge() {
+  return <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-100">Product</span>;
+}
+
+function DemoBadge() {
+  return <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">Demo trace</span>;
+}
+
+function SnapshotGroup({ label, values = [], empty }) {
+  const visibleValues = Array.isArray(values) ? values.filter(Boolean).slice(0, 10) : [];
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-slate-500">{label}</div>
+      {visibleValues.length ? (
+        <div className="flex flex-wrap gap-2">
+          {visibleValues.map((value) => (
+            <span key={value} className="rounded-full bg-white/85 px-3 py-1.5 text-xs font-semibold text-slate-800 ring-1 ring-pink-100">
+              {value}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm leading-6 text-slate-600">{empty}</p>
+      )}
     </div>
   );
 }
@@ -576,6 +661,29 @@ function getQualityGrade(score) {
     return "Mixed writing signal: the CV has useful content but needs stronger sections, metrics, and action language.";
   }
   return "Weak writing signal: the CV needs clearer structure, more detail, and measurable achievements.";
+}
+
+function priorityClass(priority = "Medium") {
+  const normalized = priority.toLowerCase();
+  if (normalized === "high") {
+    return "bg-pink-100 text-pink-800 ring-1 ring-pink-200";
+  }
+  if (normalized === "low") {
+    return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
+  }
+  return "bg-sky-100 text-sky-800 ring-1 ring-sky-200";
+}
+
+function fallbackRecommendations(result) {
+  return [
+    {
+      priority: "High",
+      title: `Clarify the target direction: ${result?.predicted_category || "target role"}`,
+      why: "This result was generated before the personalization update, so only generic model fields are available.",
+      how: "Re-upload the CV to generate skill-aware, role-aware recommendations.",
+      example: "Add a short summary that names the target role, strongest tools, and one measurable achievement.",
+    },
+  ];
 }
 
 function countVisibleWords(text) {

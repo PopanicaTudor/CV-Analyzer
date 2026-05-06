@@ -14,6 +14,8 @@ class Result(models.Model):
     cv_quality_suggestions = models.JSONField(default=list)
     cv_quality_breakdown = models.JSONField(default=list)
     analysis_summary = models.TextField(blank=True)
+    personalization_profile = models.JSONField(default=dict)
+    personalized_recommendations = models.JSONField(default=list)
     strengths = models.JSONField(default=list)
     missing_keywords = models.JSONField(default=list)
     career_path = models.JSONField(default=list)

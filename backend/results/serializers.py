@@ -22,6 +22,8 @@ class ResultSerializer(serializers.ModelSerializer):
             "cv_quality_suggestions",
             "cv_quality_breakdown",
             "analysis_summary",
+            "personalization_profile",
+            "personalized_recommendations",
             "strengths",
             "missing_keywords",
             "career_path",
