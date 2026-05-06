@@ -1,0 +1,102 @@
+[
+  {
+    "title": "Backend Software Engineer",
+    "category": "Software Engineering",
+    "description": "Design scalable APIs, build distributed services, write automated tests, optimize PostgreSQL queries, work with Docker, CI/CD, cloud infrastructure, and message queues."
+  },
+  {
+    "title": "Frontend React Engineer",
+    "category": "Software Engineering",
+    "description": "Build responsive React applications, implement reusable components, integrate REST APIs, manage state, improve accessibility, optimize web performance, and work with Tailwind or Material UI."
+  },
+  {
+    "title": "Full Stack Developer",
+    "category": "Software Engineering",
+    "description": "Develop end-to-end web features using Python, Django, JavaScript, React, PostgreSQL, Docker, authentication, API design, testing, and deployment workflows."
+  },
+  {
+    "title": "Machine Learning Engineer",
+    "category": "Data Science",
+    "description": "Train machine learning models, perform feature engineering, evaluate classifiers, deploy inference pipelines, use Python, scikit-learn, pandas, NLP, embeddings, and model monitoring."
+  },
+  {
+    "title": "Data Scientist",
+    "category": "Data Science",
+    "description": "Analyze datasets, build predictive models, use statistics, experimentation, SQL, Python, data visualization, feature extraction, machine learning, and communicate business insights."
+  },
+  {
+    "title": "Data Analyst",
+    "category": "Data Science",
+    "description": "Create dashboards, write SQL queries, clean datasets, analyze KPIs, build reports, use Python or R, Tableau or Power BI, and translate data into recommendations."
+  },
+  {
+    "title": "Project Manager",
+    "category": "Project Management",
+    "description": "Plan delivery, manage stakeholders, track milestones, coordinate agile teams, define scope, manage risks, communicate status, and improve delivery processes."
+  },
+  {
+    "title": "Scrum Master",
+    "category": "Project Management",
+    "description": "Facilitate ceremonies, remove blockers, coach agile practices, manage sprint planning, retrospectives, backlog refinement, team metrics, and continuous improvement."
+  },
+  {
+    "title": "Digital Marketing Specialist",
+    "category": "Marketing",
+    "description": "Run paid campaigns, perform SEO research, manage social media, analyze conversion funnels, create content calendars, optimize landing pages, and measure marketing ROI."
+  },
+  {
+    "title": "Content Marketing Manager",
+    "category": "Marketing",
+    "description": "Develop content strategy, write campaign briefs, manage brand messaging, coordinate editorial calendars, measure engagement, SEO performance, and lead generation."
+  },
+  {
+    "title": "Financial Analyst",
+    "category": "Finance",
+    "description": "Build financial models, analyze budgets, forecast revenue, prepare variance reports, use Excel, SQL, accounting concepts, valuation methods, and executive presentations."
+  },
+  {
+    "title": "Accountant",
+    "category": "Finance",
+    "description": "Prepare financial statements, reconcile accounts, manage invoices, apply tax rules, perform month-end close, maintain compliance, and use accounting software."
+  },
+  {
+    "title": "UX/UI Designer",
+    "category": "Design",
+    "description": "Create user flows, wireframes, prototypes, design systems, usability tests, visual interfaces, Figma components, accessibility guidelines, and product design documentation."
+  },
+  {
+    "title": "Product Designer",
+    "category": "Design",
+    "description": "Research user needs, map journeys, design prototypes, collaborate with product and engineering, validate concepts, improve interaction patterns, and maintain design systems."
+  },
+  {
+    "title": "Human Resources Specialist",
+    "category": "Human Resources",
+    "description": "Coordinate recruitment, screen candidates, manage onboarding, employee relations, HR policies, performance reviews, HRIS systems, compliance, and internal communication."
+  },
+  {
+    "title": "Talent Acquisition Partner",
+    "category": "Human Resources",
+    "description": "Source candidates, manage interview pipelines, write job descriptions, partner with hiring managers, analyze recruiting metrics, and improve candidate experience."
+  },
+  {
+    "title": "Cybersecurity Analyst",
+    "category": "Cybersecurity",
+    "description": "Monitor security events, investigate incidents, manage vulnerabilities, configure SIEM alerts, perform risk assessment, write reports, and apply network security practices."
+  },
+  {
+    "title": "Security Engineer",
+    "category": "Cybersecurity",
+    "description": "Design security controls, harden cloud infrastructure, automate threat detection, perform penetration testing, manage IAM, encryption, secure SDLC, and incident response."
+  },
+  {
+    "title": "Sales Manager",
+    "category": "Sales",
+    "description": "Manage pipeline, forecast revenue, coach account executives, negotiate contracts, track CRM metrics, develop territory plans, and build enterprise customer relationships."
+  },
+  {
+    "title": "Account Executive",
+    "category": "Sales",
+    "description": "Prospect leads, qualify opportunities, run discovery calls, present solutions, manage CRM activities, negotiate deals, and achieve sales quotas."
+  }
+]

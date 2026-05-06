@@ -1,0 +1,50 @@
+[
+  {
+    "label": "strong",
+    "text": "Senior software engineer with 6 years of experience building Django and React platforms. Led migration to PostgreSQL that reduced query latency by 38%. Built CI/CD pipelines, mentored 4 junior developers, owned production incident response, and shipped API features used by 80,000 monthly users. Skills: Python, Django, React, Docker, RabbitMQ, AWS, PostgreSQL, automated testing."
+  },
+  {
+    "label": "strong",
+    "text": "Machine learning engineer focused on NLP systems. Trained TF-IDF and transformer models, improved classifier F1 score from 0.71 to 0.84, deployed batch inference pipelines, and monitored model drift. Projects include resume parsing, job matching, feature engineering, A/B testing, and stakeholder reporting."
+  },
+  {
+    "label": "strong",
+    "text": "Product designer with a portfolio of shipped SaaS workflows. Conducted 24 user interviews, redesigned onboarding, increased activation by 19%, documented design system components, and partnered with engineers through delivery. Tools include Figma, usability testing, accessibility, prototyping, analytics, and product strategy."
+  },
+  {
+    "label": "strong",
+    "text": "Financial analyst with measurable achievements in forecasting and budget control. Built automated Excel and SQL reporting that saved 10 hours per week, improved forecast accuracy by 12%, prepared executive dashboards, and supported quarterly planning for 15 departments."
+  },
+  {
+    "label": "average",
+    "text": "Software developer with experience in Python, JavaScript, and SQL. Worked on web applications, fixed bugs, created backend endpoints, and collaborated with team members. Familiar with Git, Docker, React, and databases. Looking for opportunities to grow in full stack development."
+  },
+  {
+    "label": "average",
+    "text": "Marketing specialist responsible for social media campaigns, content writing, SEO research, and reporting. Managed newsletters and helped plan events. Comfortable with analytics tools, communication, teamwork, and campaign coordination."
+  },
+  {
+    "label": "average",
+    "text": "Human resources assistant with experience screening candidates, scheduling interviews, preparing onboarding documents, and updating HR systems. Strong communication skills and knowledge of recruitment processes."
+  },
+  {
+    "label": "average",
+    "text": "Data analyst familiar with SQL, dashboards, Excel, and Python. Created reports for business teams, cleaned datasets, and supported decision making. Interested in improving analytics and visualization skills."
+  },
+  {
+    "label": "weak",
+    "text": "I worked at a company. I did many tasks and helped people. I know computers and I am hardworking. I want a good job. Responsible for things and other activities."
+  },
+  {
+    "label": "weak",
+    "text": "Student looking for work. Skills include communication, Microsoft Office, internet, teamwork. No clear projects listed. I am motivated, punctual, serious, and eager to learn."
+  },
+  {
+    "label": "weak",
+    "text": "Experience in sales. I talked to clients and made calls. Good with people. Can work under pressure. Duties included various office activities and daily tasks."
+  },
+  {
+    "label": "weak",
+    "text": "Developer. Python Java HTML CSS. Worked on apps. School projects. Good learner. Team player. Organized. Looking for internship."
+  }
+]
