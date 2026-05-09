@@ -81,13 +81,19 @@ class CVConsumer:
             user_id = int(payload["user_id"])
             file_path = payload["file_path"]
 
-            if not CV.objects.filter(id=cv_id, user_id=user_id).exists():
+            cv = CV.objects.filter(id=cv_id, user_id=user_id).only("target_jobs").first()
+            if cv is None:
                 logger.info("Skipping stale queue message for deleted CV %s", cv_id)
                 channel.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             self.mark_cv(cv_id, user_id, CVStatus.PROCESSING, "")
-            result_data = self.processor.process(cv_id=cv_id, file_path=file_path, user_id=user_id)
+            result_data = self.processor.process(
+                cv_id=cv_id,
+                file_path=file_path,
+                user_id=user_id,
+                target_jobs=payload.get("target_jobs", cv.target_jobs or []),
+            )
             self.save_result(cv_id, user_id, result_data)
             channel.basic_ack(delivery_tag=method.delivery_tag)
             logger.info("Processed CV %s successfully", cv_id)

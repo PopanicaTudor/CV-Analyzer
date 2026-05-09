@@ -117,9 +117,10 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   me: () => request("/auth/me"),
-  uploadCV: (file) => {
+  uploadCV: (file, targetJobs = []) => {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("target_jobs", JSON.stringify(targetJobs));
     return request("/cv/upload", {
       method: "POST",
       body: formData,

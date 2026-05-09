@@ -118,7 +118,8 @@ class CVProcessor:
     def __init__(self):
         self.career_model = CareerModel()
 
-    def process(self, cv_id, file_path, user_id):
+    def process(self, cv_id, file_path, user_id, target_jobs=None):
+        target_jobs = target_jobs or []
         aggregate = {
             "cv_id": cv_id,
             "user_id": user_id,
@@ -127,6 +128,7 @@ class CVProcessor:
             "ml": {},
             "quality": {},
             "job_matches": [],
+            "target_job_matches": [],
             "text_stats": {},
         }
         errors = []
@@ -203,8 +205,10 @@ class CVProcessor:
             try:
                 if not has_errors():
                     matches = self.career_model.match_jobs(get_text())
+                    target_matches = self.career_model.match_target_jobs(get_text(), target_jobs)
                     with lock:
                         aggregate["job_matches"] = matches
+                        aggregate["target_job_matches"] = target_matches
             except Exception as exc:
                 add_error("job matching", exc)
             finally:
@@ -228,21 +232,23 @@ class CVProcessor:
             ml = aggregate["ml"]
             quality = aggregate["quality"]
             matches = aggregate["job_matches"]
+            target_matches = aggregate["target_job_matches"]
             keywords = aggregate["keywords"]
             extracted_text = aggregate["extracted_text"]
             text_stats = aggregate["text_stats"]
-        insights = self.build_extended_insights(extracted_text, ml, quality, keywords, matches)
+        insights = self.build_extended_insights(extracted_text, ml, quality, keywords, matches, target_matches)
 
         return {
             "score": ml["score"],
             "predicted_category": ml["predicted_category"],
-            "feedback": self.build_feedback(ml, keywords, matches),
+            "feedback": self.build_feedback(ml, keywords, matches, target_matches),
             "cv_quality_score": quality["cv_quality_score"],
             "cv_quality_level": quality["cv_quality_level"],
             "cv_quality_feedback": quality["cv_quality_feedback"],
             "cv_quality_suggestions": quality["cv_quality_suggestions"],
             "cv_quality_breakdown": quality["cv_quality_breakdown"],
             "analysis_summary": insights["analysis_summary"],
+            "career_score_breakdown": ml.get("score_breakdown", []),
             "personalization_profile": insights["personalization_profile"],
             "personalized_recommendations": insights["personalized_recommendations"],
             "strengths": insights["strengths"],
@@ -252,6 +258,7 @@ class CVProcessor:
             "rewrite_examples": insights["rewrite_examples"],
             "keywords": keywords,
             "job_matches": matches,
+            "target_job_matches": target_matches,
             "extracted_text": extracted_text,
             "text_stats": text_stats,
         }
@@ -404,27 +411,34 @@ class CVProcessor:
             return fallback
         return Counter(methods).most_common(1)[0][0]
 
-    def build_feedback(self, ml, keywords, matches):
+    def build_feedback(self, ml, keywords, matches, target_matches=None):
         top_keywords = ", ".join(item["term"] for item in keywords[:8]) or "no dominant keywords"
         best_match = matches[0] if matches else None
+        best_target = target_matches[0] if target_matches else None
         match_text = (
             f"The closest role match is {best_match['title']} with {best_match['similarity']}% similarity."
             if best_match
             else "No close role match was found."
         )
+        target_text = (
+            f" User target alignment is strongest for {best_target['title']} at {best_target['similarity']}%."
+            if best_target
+            else ""
+        )
+        raw_confidence = int(round(float(ml.get("raw_confidence", ml.get("confidence", 0))) * 100))
         return (
-            f"Score: {ml['score']} out of 100. This score is the model's confidence that the CV clearly fits "
-            f"one of the trained career categories. Predicted category: {ml['predicted_category']} "
-            f"with {int(round(ml['confidence'] * 100))}% category confidence. "
-            f"The strongest TF-IDF keywords found in the CV are: {top_keywords}. {match_text} "
-            "For a stronger score, make the target role explicit, repeat important role-specific tools naturally, "
-            "and add measurable achievements that connect experience to the predicted category."
+            f"Score: {ml['score']} out of 100. This score now combines category confidence, classifier separation, "
+            f"role vocabulary coverage, explicit skill signals, document depth, and measurable proof. "
+            f"Predicted category: {ml['predicted_category']} with {raw_confidence}% raw category confidence. "
+            f"The strongest TF-IDF keywords found in the CV are: {top_keywords}. {match_text}{target_text} "
+            "For a stronger score, make the intended role explicit, tie tools to projects, and add measurable outcomes."
         )
 
-    def build_extended_insights(self, text, ml, quality, keywords, matches):
+    def build_extended_insights(self, text, ml, quality, keywords, matches, target_matches=None):
         top_keywords = [item["term"] for item in keywords[:10]]
-        best_match = matches[0] if matches else None
-        profile = self.build_personalization_profile(text, ml, quality, keywords, matches)
+        target_matches = target_matches or []
+        best_match = target_matches[0] if target_matches else (matches[0] if matches else None)
+        profile = self.build_personalization_profile(text, ml, quality, keywords, matches, target_matches)
         missing_keywords = self.find_missing_keywords(text, best_match, top_keywords)
         strengths = self.detect_strengths(quality, keywords, matches, profile)
         personalized_recommendations = self.build_personalized_recommendations(
@@ -439,7 +453,7 @@ class CVProcessor:
         rewrite_examples = self.build_rewrite_examples(ml, missing_keywords, best_match, profile)
 
         best_match_text = (
-            f" The closest specific job profile is {best_match['title']} at {best_match['similarity']}% similarity."
+            f" The closest requested or market job profile is {best_match['title']} at {best_match['similarity']}% similarity."
             if best_match
             else ""
         )
@@ -468,7 +482,7 @@ class CVProcessor:
             "rewrite_examples": rewrite_examples,
         }
 
-    def build_personalization_profile(self, text, ml, quality, keywords, matches):
+    def build_personalization_profile(self, text, ml, quality, keywords, matches, target_matches=None):
         lower_text = text.lower()
         detected_sections = self.detect_sections(lower_text)
         missing_sections = [name for name in self.SECTION_ALIASES if name not in detected_sections]
@@ -478,7 +492,8 @@ class CVProcessor:
         metrics = self.extract_metrics(text)
         links = self.extract_links(text)
         top_keywords = [item["term"] for item in keywords[:8]]
-        best_match = matches[0] if matches else None
+        target_matches = target_matches or []
+        best_match = target_matches[0] if target_matches else (matches[0] if matches else None)
         weak_quality_areas = sorted(quality["cv_quality_breakdown"], key=lambda item: item["score"])[:3]
 
         target_role = best_match["title"] if best_match else f"{ml['predicted_category']} role"
@@ -504,6 +519,8 @@ class CVProcessor:
             "weak_quality_areas": weak_quality_areas,
             "missing_target_terms": missing_target_terms,
             "best_match_similarity": best_match["similarity"] if best_match else None,
+            "target_job_count": len(target_matches),
+            "target_job_titles": [item["title"] for item in target_matches[:5]],
         }
 
     def build_personalized_recommendations(self, ml, quality, matches, missing_keywords, profile):
@@ -720,6 +737,8 @@ class CVProcessor:
             return f"Built, optimized, automated, or delivered a {main_skill} solution for a clear {target_role.lower()} problem."
         if area["name"] == "Role clarity":
             return f"Headline: {target_role} focused on {main_skill}, delivery, and measurable outcomes."
+        if area["name"] == "Skill evidence":
+            return f"Skills line: {main_skill} plus the concrete project, context, and result where it was used."
         return f"Rewrite one generic sentence into a {target_role.lower()} achievement with tool, action, and result."
 
     def summary_example(self, target_role, detected_skills, metrics):
@@ -772,7 +791,7 @@ class CVProcessor:
         return strengths[:7]
 
     def build_career_path(self, ml, quality, matches, missing_keywords, profile=None):
-        target_role = matches[0]["title"] if matches else f"{ml['predicted_category']} role"
+        target_role = (profile or {}).get("target_role") or (matches[0]["title"] if matches else f"{ml['predicted_category']} role")
         second_role = matches[1]["title"] if len(matches) > 1 else "adjacent role"
         missing_terms = ", ".join(item["term"] for item in missing_keywords[:4]) or "the most important target-role tools"
         quality_focus = min(quality["cv_quality_breakdown"], key=lambda item: item["score"])
@@ -859,6 +878,8 @@ class CVProcessor:
             return "Start bullets with verbs such as built, led, improved, automated, optimized, analyzed, or delivered."
         if area["name"] == "Role clarity":
             return "Add a headline or summary that names the target role and mirrors the most relevant skills."
+        if area["name"] == "Skill evidence":
+            return "Replace generic skill lists with concrete tools, methods, platforms, and one proof bullet for each important skill."
         return "Add clearer evidence and reduce generic wording."
 
     def build_rewrite_examples(self, ml, missing_keywords, best_match, profile=None):

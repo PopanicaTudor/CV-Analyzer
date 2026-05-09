@@ -40,7 +40,7 @@ const stageCopy = [
   },
   {
     title: "Job matching",
-    detail: "Compares the CV vector with job descriptions using cosine similarity.",
+    detail: "Compares the CV vector with market profiles and the user's requested target jobs.",
   },
 ];
 
@@ -123,6 +123,17 @@ export default function Result() {
       })),
     [result],
   );
+  const targetChartData = useMemo(
+    () =>
+      (result?.target_job_matches || []).map((match) => ({
+        name: match.title,
+        similarity: match.similarity,
+        semantic_similarity: match.semantic_similarity,
+        lexical_similarity: match.lexical_similarity,
+      })),
+    [result],
+  );
+  const careerBreakdownData = result?.career_score_breakdown || [];
 
   const score = Math.max(0, Math.min(100, Number(result?.score) || 0));
   const hasQualityScore = result?.cv_quality_score !== null && result?.cv_quality_score !== undefined;
@@ -132,7 +143,9 @@ export default function Result() {
   const textStats = result?.text_stats || {};
   const wordCount = Number(textStats.word_count) || countVisibleWords(result?.extracted_text || "");
   const keywordCount = result?.keywords?.length || 0;
-  const bestMatch = result?.job_matches?.[0];
+  const bestMarketMatch = result?.job_matches?.[0];
+  const bestTargetMatch = result?.target_job_matches?.[0];
+  const bestMatch = bestTargetMatch || bestMarketMatch;
   const profile = result?.personalization_profile || {};
   const recommendations = result?.personalized_recommendations || [];
   const qualityBreakdownData = useMemo(
@@ -240,6 +253,24 @@ export default function Result() {
                     {score} / 100
                   </div>
                   <div className="mt-2 text-sm leading-6 text-slate-600">{grade}</div>
+                  {careerBreakdownData.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      {careerBreakdownData.slice(0, 4).map((item) => (
+                        <div key={item.name}>
+                          <div className="mb-1 flex items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+                            <span className="truncate">{item.name}</span>
+                            <span>{Math.round(Number(item.score) || 0)}</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-sky-50 ring-1 ring-sky-100">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-sky-400 to-indigo-400"
+                              style={{ width: `${Math.max(0, Math.min(100, Number(item.score) || 0))}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </Panel>
@@ -271,6 +302,54 @@ export default function Result() {
               </div>
             </Panel>
           </div>
+
+          {result.target_job_matches?.length > 0 && (
+            <Panel tone="blue">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <BriefcaseBusiness size={20} className="text-sky-700" />
+                  <h2 className="text-base font-semibold text-slate-950">Target job alignment</h2>
+                </div>
+                <ProductBadge />
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {result.target_job_matches.map((match) => (
+                  <div key={`${match.title}-${match.similarity}`} className="rounded-lg bg-white/80 p-4 ring-1 ring-sky-100">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-950">{match.title}</div>
+                        <div className="mt-1 text-xs font-medium text-sky-700">
+                          {match.category}
+                          {match.reference_title ? ` via ${match.reference_title}` : ""}
+                        </div>
+                      </div>
+                      <div className={`shrink-0 rounded-md px-2 py-1 text-sm font-semibold ring-1 ${alignmentClass(match.similarity)}`}>
+                        {Math.round(Number(match.similarity) || 0)}%
+                      </div>
+                    </div>
+                    <div className="mt-3 h-3 overflow-hidden rounded-full bg-sky-50 ring-1 ring-sky-100">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-sky-400 to-pink-400"
+                        style={{ width: `${Math.max(0, Math.min(100, Number(match.similarity) || 0))}%` }}
+                      />
+                    </div>
+                    <div className="mt-3 text-sm font-semibold text-slate-800">{match.alignment_verdict || "Alignment signal"}</div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <SignalList title="Found signals" values={match.covered_terms || []} empty="No strong overlap yet" />
+                      <SignalList title="Missing signals" values={match.missing_terms || []} empty="No major missing terms" />
+                    </div>
+                    {match.match_reasons?.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                        {match.match_reasons.slice(0, 3).map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
 
           <div className="space-y-6">
             <Panel tone="blue">
@@ -379,6 +458,32 @@ export default function Result() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+            {careerBreakdownData.length > 0 && (
+              <Panel tone="blue">
+                <div className="mb-4 flex items-center gap-2">
+                  <Gauge size={20} className="text-sky-700" />
+                  <h2 className="text-base font-semibold text-slate-950">Career fit breakdown</h2>
+                </div>
+                <div className="space-y-3">
+                  {careerBreakdownData.map((item) => (
+                    <div key={item.name} className="rounded-lg bg-white/75 p-3 ring-1 ring-sky-100">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-slate-950">{item.name}</div>
+                        <div className="text-sm font-semibold text-sky-800">{Math.round(Number(item.score) || 0)}/100</div>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-sky-50">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-sky-400 to-indigo-400"
+                          style={{ width: `${Math.max(0, Math.min(100, Number(item.score) || 0))}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">{item.evidence}</p>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
+
             <Panel tone="pink">
               <div className="mb-4 flex items-center gap-2">
                 <FileText size={20} className="text-pink-700" />
@@ -461,6 +566,17 @@ export default function Result() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
+            {targetChartData.length > 0 && (
+              <Panel tone="demo">
+                <div className="mb-4 flex items-center gap-2">
+                  <BriefcaseBusiness size={20} className="text-amber-700" />
+                  <h2 className="text-base font-semibold text-slate-950">Requested job similarity chart</h2>
+                  <DemoBadge />
+                </div>
+                <JobSimilarityChart data={targetChartData} />
+              </Panel>
+            )}
+
             <Panel tone="demo">
               <div className="mb-4 flex items-center gap-2">
                 <BarChart3 size={20} className="text-amber-700" />
@@ -508,11 +624,11 @@ export default function Result() {
               <h2 className="text-base font-semibold text-slate-950">Job matches</h2>
               <ProductBadge />
             </div>
-            {bestMatch && (
+            {bestMarketMatch && (
               <div className="mb-4 rounded-lg bg-gradient-to-r from-sky-100 to-pink-100 p-4 ring-1 ring-white">
                 <div className="text-xs font-semibold uppercase tracking-normal text-slate-500">Best match</div>
                 <div className="mt-1 text-xl font-semibold text-slate-950">
-                  {bestMatch.title} at {bestMatch.similarity}% similarity
+                  {bestMarketMatch.title} at {bestMarketMatch.similarity}% similarity
                 </div>
               </div>
             )}
@@ -613,6 +729,40 @@ function SnapshotGroup({ label, values = [], empty }) {
       )}
     </div>
   );
+}
+
+function SignalList({ title, values = [], empty }) {
+  const visibleValues = Array.isArray(values) ? values.filter(Boolean).slice(0, 8) : [];
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-normal text-slate-500">{title}</div>
+      {visibleValues.length ? (
+        <div className="flex flex-wrap gap-2">
+          {visibleValues.map((value) => (
+            <span key={value} className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-sky-100">
+              {value}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs leading-5 text-slate-500">{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function alignmentClass(score) {
+  const value = Number(score) || 0;
+  if (value >= 80) {
+    return "bg-emerald-50 text-emerald-800 ring-emerald-100";
+  }
+  if (value >= 65) {
+    return "bg-sky-50 text-sky-800 ring-sky-100";
+  }
+  if (value >= 50) {
+    return "bg-amber-50 text-amber-800 ring-amber-100";
+  }
+  return "bg-red-50 text-red-700 ring-red-100";
 }
 
 function ProcessingTimeline({ active = false }) {

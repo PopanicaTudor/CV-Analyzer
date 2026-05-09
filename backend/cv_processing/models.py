@@ -16,6 +16,7 @@ class CV(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     status = models.CharField(max_length=20, choices=CVStatus.choices, default=CVStatus.PENDING)
     error_message = models.TextField(blank=True)
+    target_jobs = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ("-upload_date",)

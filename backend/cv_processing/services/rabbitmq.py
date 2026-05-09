@@ -21,6 +21,7 @@ def publish_cv_uploaded(cv):
         "cv_id": cv.id,
         "file_path": str(cv.file.path),
         "user_id": cv.user_id,
+        "target_jobs": cv.target_jobs or [],
     }
 
     body = json.dumps(payload).encode("utf-8")

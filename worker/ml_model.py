@@ -147,15 +147,14 @@ class CareerModel:
         combined_scores = self._combine_category_scores(tfidf_scores, semantic_scores)
         category = max(combined_scores, key=combined_scores.get)
         raw_confidence = float(combined_scores[category])
-        evidence_boost = self._career_evidence_boost(text, category)
-        calibrated_confidence = self._calibrate_career_confidence(raw_confidence, evidence_boost)
+        score_breakdown, career_score = self._career_score_breakdown(text, category, raw_confidence, combined_scores)
 
         return {
             "predicted_category": category,
-            "confidence": round(calibrated_confidence, 4),
+            "confidence": round(career_score / 100, 4),
             "raw_confidence": round(raw_confidence, 4),
-            "career_evidence_boost": round(evidence_boost, 4),
-            "score": max(0, min(100, int(round(calibrated_confidence * 100)))),
+            "score": career_score,
+            "score_breakdown": score_breakdown,
             "tfidf_confidence": round(tfidf_scores.get(category, 0), 4),
             "semantic_confidence": round(semantic_scores.get(category, 0), 4) if semantic_scores else None,
             "semantic_enabled": bool(semantic_scores),
@@ -171,9 +170,31 @@ class CareerModel:
         }
 
     def match_jobs(self, text, limit=5):
+        profiles = [
+            {
+                "title": job["title"],
+                "category": job["category"],
+                "description": job["description"],
+                "match_text": f"{job['title']}. {job['category']}. {job['description']}",
+                "source": "market",
+            }
+            for job in self.jobs
+        ]
+        return self._match_profiles(text, profiles, limit=limit)
+
+    def match_target_jobs(self, text, target_jobs, limit=5):
+        profiles = self._target_job_profiles(target_jobs)
+        if not profiles:
+            return []
+        return self._match_profiles(text, profiles, limit=limit, calibrate_targets=True)
+
+    def score_quality(self, text):
+        return self.quality_model.score(text)
+
+    def _match_profiles(self, text, profiles, limit=5, calibrate_targets=False):
         cv_document = self.preprocessor.to_document(text)
-        job_documents = [self.preprocessor.to_document(job["description"]) for job in self.jobs]
-        documents = [cv_document] + job_documents
+        profile_documents = [self.preprocessor.to_document(profile["match_text"]) for profile in profiles]
+        documents = [cv_document] + profile_documents
 
         if not cv_document.strip():
             return []
@@ -181,7 +202,7 @@ class CareerModel:
         vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2), min_df=1)
         matrix = vectorizer.fit_transform(documents)
         lexical_similarities = cosine_similarity(matrix[0:1], matrix[1:]).flatten()
-        semantic_similarities = self.semantic.rank(text, [job["description"] for job in self.jobs])
+        semantic_similarities = self.semantic.rank(text, [profile["match_text"] for profile in profiles])
 
         if semantic_similarities is not None:
             semantic_percent = np.clip(semantic_similarities * 100, 0, 100)
@@ -196,25 +217,42 @@ class CareerModel:
 
         matches = []
         for index in ranked_indexes:
-            job = self.jobs[index]
+            profile = profiles[index]
             semantic_value = round(float(semantic_percent[index]), 2) if semantic_percent is not None else None
             lexical_value = round(float(lexical_percent[index]), 2)
-            combined_value = round(float(combined_similarities[index]), 2)
+            raw_combined = float(combined_similarities[index])
+            coverage = self._term_coverage(text, profile["match_text"])
+            title_coverage = self._term_coverage(text, profile["title"], max_terms=5)
+            combined_value = (
+                self._calibrate_target_alignment(raw_combined, coverage["score"], title_coverage["score"])
+                if calibrate_targets
+                else round(raw_combined, 2)
+            )
             matches.append(
                 {
-                    "title": job["title"],
-                    "category": job["category"],
+                    "title": profile["title"],
+                    "category": profile["category"],
                     "similarity": combined_value,
                     "semantic_similarity": semantic_value,
                     "lexical_similarity": lexical_value,
-                    "match_reasons": self._match_reasons(text, job["description"], semantic_value, lexical_value),
-                    "description": job["description"],
+                    "evidence_similarity": coverage["score"],
+                    "covered_terms": coverage["covered"][:8],
+                    "missing_terms": coverage["missing"][:8],
+                    "alignment_verdict": self._alignment_verdict(combined_value),
+                    "reference_title": profile.get("reference_title", ""),
+                    "source": profile.get("source", "market"),
+                    "match_reasons": self._match_reasons(
+                        text,
+                        profile["match_text"],
+                        semantic_value,
+                        lexical_value,
+                        coverage["covered"],
+                        coverage["missing"],
+                    ),
+                    "description": profile["description"],
                 }
             )
         return matches
-
-    def score_quality(self, text):
-        return self.quality_model.score(text)
 
     def _semantic_category_scores(self, text):
         scores = self.semantic.rank(text, [self.category_corpus[category] for category in self.categories])
@@ -239,31 +277,202 @@ class CareerModel:
             combined = {category: score / total for category, score in combined.items()}
         return combined
 
-    def _career_evidence_boost(self, text, category):
+    def _career_score_breakdown(self, text, category, raw_confidence, combined_scores):
         cv_terms = set(self.preprocessor.preprocess_tokens(text))
         category_terms = self.preprocessor.preprocess_tokens(self.category_corpus.get(category, ""))
         important_terms = [term for term, _count in Counter(category_terms).most_common(30)]
-        if not important_terms:
-            return 0
-
         overlap = sum(1 for term in important_terms if term in cv_terms)
-        overlap_ratio = overlap / len(important_terms)
-        length_signal = min(len(cv_terms) / 220, 1.0)
-        return min(0.18, (overlap_ratio * 0.14) + (length_signal * 0.04))
+        overlap_ratio = overlap / max(1, len(important_terms))
+        length_signal = min(len(cv_terms) / 260, 1.0)
+        role_terms = {
+            "engineer",
+            "developer",
+            "designer",
+            "analyst",
+            "scientist",
+            "manager",
+            "specialist",
+            "consultant",
+            "architect",
+            "administrator",
+        }
+        skill_terms = {
+            "python",
+            "django",
+            "react",
+            "javascript",
+            "typescript",
+            "sql",
+            "postgresql",
+            "docker",
+            "aws",
+            "api",
+            "testing",
+            "machine",
+            "learning",
+            "figma",
+            "analytics",
+            "excel",
+            "tableau",
+            "power",
+            "security",
+            "marketing",
+            "sales",
+            "finance",
+        }
+        role_hits = sum(1 for term in role_terms if term in cv_terms)
+        skill_hits = sum(1 for term in skill_terms if term in cv_terms)
+        metric_count = len(
+            re.findall(
+                r"\b\d+(?:[.,]\d+)?\s?(?:%|users|clients|customers|projects|features|reports|dashboards|hours|weeks|months|years|x)\b|\$\s?\d+",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+        sorted_scores = sorted(combined_scores.values(), reverse=True)
+        margin = sorted_scores[0] - sorted_scores[1] if len(sorted_scores) > 1 else sorted_scores[0]
+        dominance = min(1.0, margin / max(sorted_scores[0], 0.001))
+        confidence_signal = min(raw_confidence / 0.55, 1.0)
+        skill_signal = min(skill_hits / 10, 1.0)
+        role_signal = min(role_hits / 3, 1.0)
+        metric_signal = min(metric_count / 6, 1.0)
 
-    def _calibrate_career_confidence(self, confidence, evidence_boost):
-        relaxed = confidence + evidence_boost
-        if confidence >= 0.30:
-            relaxed += 0.08
-        elif confidence >= 0.22:
-            relaxed += 0.12
-        else:
-            relaxed += 0.16
+        breakdown = [
+            {
+                "name": "Category confidence",
+                "score": int(round(confidence_signal * 100)),
+                "evidence": f"{int(round(raw_confidence * 100))}% top-category probability before calibration",
+            },
+            {
+                "name": "Classifier separation",
+                "score": int(round(dominance * 100)),
+                "evidence": "How clearly the best category separates from the runner-up",
+            },
+            {
+                "name": "Role vocabulary coverage",
+                "score": int(round(overlap_ratio * 100)),
+                "evidence": f"{overlap}/{len(important_terms)} important {category} terms detected",
+            },
+            {
+                "name": "Explicit skill signals",
+                "score": int(round(skill_signal * 100)),
+                "evidence": f"{skill_hits} recognizable skill or domain terms",
+            },
+            {
+                "name": "Target-title clarity",
+                "score": int(round(role_signal * 100)),
+                "evidence": f"{role_hits} explicit role-title terms",
+            },
+            {
+                "name": "Measurable proof",
+                "score": int(round(metric_signal * 100)),
+                "evidence": f"{metric_count} measurable outcomes or scale signals",
+            },
+            {
+                "name": "Document depth",
+                "score": int(round(length_signal * 100)),
+                "evidence": f"{len(cv_terms)} usable normalized terms",
+            },
+        ]
 
-        # Keep weak matches from looking perfect, but avoid under-scoring plausible CVs.
-        return max(confidence, min(0.92, relaxed))
+        score = (
+            28
+            + (confidence_signal * 22)
+            + (dominance * 16)
+            + (overlap_ratio * 18)
+            + (skill_signal * 10)
+            + (role_signal * 8)
+            + (metric_signal * 8)
+            + (length_signal * 8)
+        )
+        return breakdown, max(0, min(100, int(round(score))))
 
-    def _match_reasons(self, cv_text, job_description, semantic_value, lexical_value):
+    def _target_job_profiles(self, target_jobs):
+        profiles = []
+        for item in target_jobs or []:
+            if isinstance(item, str):
+                title = self._clean_text(item)[:120]
+                description = ""
+            elif isinstance(item, dict):
+                title = self._clean_text(item.get("title") or item.get("role") or item.get("name"))[:120]
+                description = self._clean_text(item.get("description") or item.get("signals") or item.get("requirements"))[:1500]
+            else:
+                continue
+
+            if not title and not description:
+                continue
+            if not title:
+                title = description[:80].rstrip()
+
+            reference = self._closest_reference_job(f"{title}. {description}")
+            reference_description = reference["description"] if reference else ""
+            match_text = self._clean_text(f"{title}. {description}. {reference_description}")
+            profiles.append(
+                {
+                    "title": title,
+                    "category": reference["category"] if reference else "User target",
+                    "description": description or reference_description or title,
+                    "match_text": match_text,
+                    "reference_title": reference["title"] if reference else "",
+                    "source": "user_target",
+                }
+            )
+        return profiles
+
+    def _closest_reference_job(self, query):
+        query_document = self.preprocessor.to_document(query)
+        if not query_document.strip():
+            return None
+
+        documents = [query_document] + [
+            self.preprocessor.to_document(f"{job['title']} {job['category']} {job['description']}")
+            for job in self.jobs
+        ]
+        vectorizer = TfidfVectorizer(max_features=3000, ngram_range=(1, 2), min_df=1)
+        matrix = vectorizer.fit_transform(documents)
+        scores = cosine_similarity(matrix[0:1], matrix[1:]).flatten()
+        index = int(scores.argmax())
+        if float(scores[index]) < 0.05:
+            return None
+        return self.jobs[index]
+
+    def _term_coverage(self, cv_text, target_text, max_terms=18):
+        cv_tokens = set(self.preprocessor.preprocess_tokens(cv_text))
+        ranked_terms = [
+            term
+            for term, _count in Counter(self.preprocessor.preprocess_tokens(target_text)).most_common(max_terms)
+            if len(term) >= 3
+        ]
+        if not ranked_terms:
+            return {"score": 0, "covered": [], "missing": []}
+        covered = [term for term in ranked_terms if term in cv_tokens]
+        missing = [term for term in ranked_terms if term not in cv_tokens]
+        score = int(round((len(covered) / len(ranked_terms)) * 100))
+        return {"score": score, "covered": covered, "missing": missing}
+
+    def _calibrate_target_alignment(self, raw_similarity, evidence_score, title_score):
+        score = 18 + (raw_similarity * 0.45) + (evidence_score * 0.38) + (title_score * 0.17)
+        if evidence_score >= 45:
+            score += 8
+        if raw_similarity >= 60:
+            score += 7
+        elif raw_similarity >= 40:
+            score += 5
+        return round(max(0, min(98, score)), 2)
+
+    def _alignment_verdict(self, score):
+        if score >= 80:
+            return "Strong signal"
+        if score >= 65:
+            return "Good signal"
+        if score >= 50:
+            return "Partial signal"
+        return "Weak signal"
+
+    def _clean_text(self, value):
+        return re.sub(r"\s+", " ", str(value or "")).strip()
+
+    def _match_reasons(self, cv_text, job_description, semantic_value, lexical_value, covered_terms=None, missing_terms=None):
         cv_tokens = set(self.preprocessor.preprocess_tokens(cv_text))
         job_tokens = self.preprocessor.preprocess_tokens(job_description)
         shared_terms = []
@@ -281,6 +490,10 @@ class CareerModel:
             reasons.append(f"Shared role vocabulary: {', '.join(shared_terms)}.")
         else:
             reasons.append("Low exact vocabulary overlap; add more role-specific evidence if this role is relevant.")
+        if covered_terms:
+            reasons.append(f"Evidence found for: {', '.join(covered_terms[:5])}.")
+        if missing_terms:
+            reasons.append(f"Missing or weak signals: {', '.join(missing_terms[:5])}.")
         return reasons
 
 
@@ -335,11 +548,11 @@ class CVQualityModel:
         semantic_score = self._semantic_quality_score(text)
 
         breakdown = self._quality_breakdown(text)
-        structure_score = sum(item["score"] for item in breakdown) / len(breakdown)
+        structure_score = self._weighted_quality_score(breakdown)
         if semantic_score is not None:
-            final_score = int(round((model_score * 0.45) + (semantic_score * 0.25) + (structure_score * 0.30)))
+            final_score = int(round((structure_score * 0.70) + (model_score * 0.20) + (semantic_score * 0.10)))
         else:
-            final_score = int(round((model_score * 0.65) + (structure_score * 0.35)))
+            final_score = int(round((structure_score * 0.78) + (model_score * 0.22)))
         final_score = max(0, min(100, final_score))
 
         return {
@@ -380,7 +593,7 @@ class CVQualityModel:
         word_count = len(words)
         lower_text = text.lower()
         bullet_count = len(re.findall(r"(^|\n)\s*([*-]|[0-9]+[.)])\s+", text))
-        metric_count = len(re.findall(r"\b\d+%?|\$\d+|\b[0-9]+x\b", text, flags=re.IGNORECASE))
+        metric_count = self._meaningful_metric_count(text)
         action_verbs = {
             "built",
             "created",
@@ -404,6 +617,7 @@ class CVQualityModel:
         section_hits = sum(1 for term in section_terms if term in lower_text)
         role_terms = ["engineer", "developer", "designer", "analyst", "manager", "specialist", "scientist", "consultant"]
         role_hits = sum(1 for term in role_terms if term in lower_text)
+        skill_count = self._skill_signal_count(lower_text)
 
         return [
             {
@@ -418,8 +632,8 @@ class CVQualityModel:
             },
             {
                 "name": "Measurable impact",
-                "score": self._bounded_score(metric_count, 2, 10),
-                "evidence": f"{metric_count} measurable values or numbers",
+                "score": self._bounded_score(metric_count, 2, 8),
+                "evidence": f"{metric_count} meaningful metrics, scale, or outcome numbers",
             },
             {
                 "name": "Action language",
@@ -431,14 +645,93 @@ class CVQualityModel:
                 "score": self._bounded_score(role_hits, 1, 5),
                 "evidence": f"{role_hits} explicit role or target-title signals",
             },
+            {
+                "name": "Skill evidence",
+                "score": self._bounded_score(skill_count, 4, 14),
+                "evidence": f"{skill_count} concrete tool, method, or domain signals",
+            },
         ]
 
     def _bounded_score(self, value, minimum, target):
         if value <= 0:
-            return 15
+            return 20
         if value < minimum:
-            return int(round(25 + (value / minimum) * 25))
-        return max(50, min(100, int(round(50 + ((value - minimum) / max(1, target - minimum)) * 50))))
+            return int(round(20 + (value / minimum) * 30))
+        progress = min(1.0, (value - minimum) / max(1, target - minimum))
+        return max(50, min(100, int(round(50 + (progress ** 0.7) * 50))))
+
+    def _weighted_quality_score(self, breakdown):
+        weights = {
+            "Completeness": 0.16,
+            "Structure": 0.17,
+            "Measurable impact": 0.20,
+            "Action language": 0.15,
+            "Role clarity": 0.16,
+            "Skill evidence": 0.16,
+        }
+        total_weight = sum(weights.get(item["name"], 0.1) for item in breakdown)
+        if total_weight == 0:
+            return sum(item["score"] for item in breakdown) / max(1, len(breakdown))
+        return sum(item["score"] * weights.get(item["name"], 0.1) for item in breakdown) / total_weight
+
+    def _meaningful_metric_count(self, text):
+        patterns = [
+            r"\b\d+(?:[.,]\d+)?\s?%",
+            r"\b\d+(?:[.,]\d+)?\s?(?:users|clients|customers|projects|features|tickets|reports|dashboards|models|pages|hours|days|weeks|months|years)\b",
+            r"\b(?:reduced|increased|improved|saved|grew|optimized|delivered|decreased|raised)\b[^.\n]{0,70}\b\d+(?:[.,]\d+)?\b",
+            r"\$\s?\d+(?:[.,]\d+)?[kKmM]?",
+            r"\b\d+(?:[.,]\d+)?x\b",
+        ]
+        matches = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+                value = re.sub(r"\s+", " ", match.group()).strip().lower()
+                if value not in matches:
+                    matches.append(value)
+        return len(matches)
+
+    def _skill_signal_count(self, lower_text):
+        skill_terms = [
+            "python",
+            "django",
+            "flask",
+            "fastapi",
+            "react",
+            "javascript",
+            "typescript",
+            "node",
+            "sql",
+            "postgresql",
+            "mysql",
+            "mongodb",
+            "docker",
+            "kubernetes",
+            "aws",
+            "azure",
+            "git",
+            "api",
+            "testing",
+            "machine learning",
+            "nlp",
+            "pandas",
+            "numpy",
+            "figma",
+            "analytics",
+            "excel",
+            "tableau",
+            "power bi",
+            "seo",
+            "crm",
+            "accounting",
+            "recruitment",
+            "cybersecurity",
+        ]
+        count = 0
+        for term in skill_terms:
+            pattern = re.escape(term).replace(r"\ ", r"[\s/_-]+")
+            if re.search(rf"(?<![a-z0-9+#.-]){pattern}(?![a-z0-9+#.-])", lower_text):
+                count += 1
+        return count
 
     def _quality_level(self, score, model_level):
         if score >= 80:
@@ -463,6 +756,8 @@ class CVQualityModel:
                 suggestions.append("Start bullets with strong action verbs like built, led, improved, automated, optimized, or delivered.")
             elif area["name"] == "Role clarity":
                 suggestions.append("Make the target role explicit in the summary and mirror the key skills expected for that role.")
+            elif area["name"] == "Skill evidence":
+                suggestions.append("Name concrete tools, methods, domains, or platforms and connect them to real work.")
 
         if score < 70:
             suggestions.append("Rewrite generic claims into evidence-based bullets: action, tool, result, and measurable impact.")
