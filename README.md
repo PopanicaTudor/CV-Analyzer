@@ -582,4 +582,3 @@ Proiectul tratează explicit mai multe cazuri:
 - Worker-ul poate fi scalat orizontal prin pornirea mai multor containere worker.
 - `prefetch_count=1` evită ca un worker să primească multe task-uri grele simultan.
 - Volumul `media_data` este montat atât în backend, cât și în worker, astfel worker-ul poate citi fișierele încărcate de backend.
-- ML-ul este explicabil prin breakdown-uri și evidențe, nu doar printr-un scor numeric.
